@@ -207,7 +207,8 @@ class GaussianTrainer(object):
             seq_data = sequences[self.seq_name]
             # seq_data = seq_data[:100]
             if self.model_cfg.eval:
-                sample_rate = 8
+                # sample_rate = 8
+                sample_rate = 9
                 ids = np.arange(len(seq_data))
                 self.i_test = ids[int(sample_rate/2)::sample_rate]
                 self.i_train = np.array(
@@ -230,6 +231,8 @@ class GaussianTrainer(object):
             else:
                 self.data = seq_data
             self.seq_len = len(self.data)
+
+        # custom dataset train 코드
         elif self.model_cfg.data_type == "custom":
             source_path = self.model_cfg.source_path
             cameras_intrinsic_file = os.path.join(source_path, "sparse/0", "cameras.bin")
@@ -248,7 +251,16 @@ class GaussianTrainer(object):
             #         [[focal_length_x, 0, width/2], [0, focal_length_y, height/2], [0, 0, 1]])
             #     self.intrinsic = intr_mat
             # else:
-            images = sorted(glob.glob(os.path.join(source_path, "images/*.jpg")))
+            # images = sorted(glob.glob(os.path.join(source_path, "images/*.jpg"))) # JPG도 받게 수정해야 함.
+
+            # 확장자 다양하게 받게 수정
+            image_extensions = ["*.jpg", "*.JPG", "*.png", "*.PNG", "*.jpeg", "*.JPEG"]
+            images = []
+            for ext in image_extensions:
+                images.extend(glob.glob(os.path.join(source_path, f"images/{ext}")))
+            images = sorted(images)
+
+
             if len(images) > max_frames:
                 interval = len(images) // max_frames
                 images = images[::interval]
@@ -281,7 +293,10 @@ class GaussianTrainer(object):
             self.intrinsic = intr_mat
 
 
-            sample_rate = 8
+            # sample_rate = 8 
+            # sample_rate 수정
+            sample_rate = 9
+
             ids = np.arange(len(images))
             self.i_test = ids[int(sample_rate/2)::sample_rate]
             self.i_train = np.array([i for i in ids if i not in self.i_test])
@@ -301,7 +316,8 @@ class GaussianTrainer(object):
             all_views = train_views + test_views
 
             # sample_rate = 8
-            sample_rate = 2 if "Family" in source_path else 8
+            # sample_rate = 2 if "Family" in source_path else 8
+            sample_rate = 3 if "Family" in source_path else 9
             ids = np.arange(len(all_views))
             self.i_test = ids[int(sample_rate/2)::sample_rate]
             self.i_train = np.array([i for i in ids if i not in self.i_test])

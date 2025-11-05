@@ -569,7 +569,8 @@ class CFGaussianTrainer(GaussianTrainer):
                 self.model_cfg.model_path.replace('chkpnt', 'pose'))
             self.gs_render.gaussians.rotate_seq = True
 
-        sample_rate = 2 if "Family" in result_path else 8
+        # sample_rate = 2 if "Family" in result_path else 8
+        sample_rate = 3 if "Family" in result_path else 9
         pose_test_init = pose_dict_train['poses_pred'][int(
             sample_rate/2)::sample_rate-1][:max_frame]
         self.gs_render.gaussians.init_RT_seq(
