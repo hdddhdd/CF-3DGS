@@ -683,6 +683,9 @@ class CFGaussianModel:
         self.densify_and_split(grads, max_grad, extent)
 
         prune_mask = (self.get_opacity < min_opacity).squeeze()
+        pruned_pts = int(prune_mask.sum().item())
+        print(f"[Prune] Pruned {pruned_pts} points based on opacity.")
+        
         if max_screen_size:
             big_points_vs = self.max_radii2D > max_screen_size
             big_points_ws = self.get_scaling.max(dim=1).values > 0.1 * extent
@@ -691,6 +694,99 @@ class CFGaussianModel:
         self.prune_points(prune_mask)
 
         torch.cuda.empty_cache()
+
+
+    def densify_and_prune_ours(
+        self,
+        grad_threshold,
+        min_opacity,
+        scene_extent,
+        size_threshold,
+        frame_trust=1.0,
+        bit_trust=0.0,
+        debug=False,
+        momentum=0.98,
+        baseline_init=None
+    ):
+
+        trust_sum = frame_trust + bit_trust
+
+        if not hasattr(self, "trust_initialized") or not self.trust_initialized:
+            self.trust_baseline = baseline_init if baseline_init is not None else trust_sum
+            self.trust_initialized = True
+            if debug:
+                print(f"[Init] trust_baseline initialized to {self.trust_baseline:.4f}")
+
+        # EMA 업데이트
+        self.trust_momentum = momentum
+        self.trust_baseline = (
+            self.trust_momentum * self.trust_baseline
+            + (1 - self.trust_momentum) * trust_sum
+        )
+
+        if debug:
+            print(f"[EMA Update] baseline={self.trust_baseline:.4f}, momentum={self.trust_momentum:.3f}")
+
+        dynamic_grad_threshold = grad_threshold * math.exp(self.trust_baseline - trust_sum)
+        dynamic_grad_threshold = max(grad_threshold * 0.3,
+                                    min(dynamic_grad_threshold, grad_threshold * 1.2))
+
+        ## densification
+        if debug:
+            print(f"[DynamicTh] trust_sum={trust_sum:.3f}, baseline={self.trust_baseline:.3f} "
+                f"→ grad_th {grad_threshold:.6f} → {dynamic_grad_threshold:.6f}")
+
+        grads = self.xyz_gradient_accum / self.denom
+        grads[grads.isnan()] = 0.0
+
+        self.densify_and_clone(grads, dynamic_grad_threshold, scene_extent)
+        self.densify_and_split(grads, dynamic_grad_threshold, scene_extent)
+
+
+        ## pruning opacity - scale
+        dynamic_min_opacity = min_opacity * math.exp(self.trust_baseline - trust_sum)
+        dynamic_min_opacity = max(min_opacity * 0.5,
+                                min(dynamic_min_opacity, min_opacity * 2.0))
+
+        prune_mask = (self.get_opacity < dynamic_min_opacity).squeeze()
+
+        if debug:
+            print(f"[Pruning] bit={bit_trust:.3f}, frame={frame_trust:.3f} "
+                f"→ min_opacity {min_opacity:.5f} → {dynamic_min_opacity:.5f}")
+        
+        ## scale pruning
+        scales = torch.exp(self._scaling[:, :3])
+        num_points = self._xyz.shape[0]
+        U = torch.norm(scales, dim=1)
+        U_median = torch.median(U)
+        U_tilde = U / (U_median + 1e-8)
+
+        # scale weighting (trust_baseline으로 조절)
+        scale_weight = torch.exp(self.trust_baseline * U_tilde).squeeze()
+        scale_mask = (self.get_opacity.squeeze() < min_opacity * scale_weight)
+
+        # 최종 prune mask: opacity + scale
+        prune_mask = torch.logical_or(prune_mask, scale_mask)
+
+        if size_threshold:
+            big_points_vs = self.max_radii2D > size_threshold
+            big_points_ws = self.get_scaling.max(dim=1).values > 0.1 * scene_extent
+            prune_mask = torch.logical_or(torch.logical_or(prune_mask, big_points_vs), big_points_ws)
+
+        total_pts = num_points
+        pruned_pts = int(prune_mask.sum().item())
+        kept_pts = total_pts - pruned_pts
+
+        self.prune_points(prune_mask)
+        torch.cuda.empty_cache()
+
+        if debug:
+            mean_scale = float(scales.mean().item())
+            print(
+                f"[EMA-Prune] total={total_pts} | pruned={pruned_pts} | kept={kept_pts} | "
+                f"mean_scale={mean_scale:.4f} | baseline={self.trust_baseline:.3f}"
+            )
+
 
     def prune(self, max_grad, min_opacity, extent, max_screen_size):
         prune_mask = (self.get_opacity < min_opacity).squeeze()

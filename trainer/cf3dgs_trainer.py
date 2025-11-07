@@ -41,6 +41,7 @@ from utils.utils_poses.comp_ate import compute_rpe, compute_ATE
 
 from kornia.geometry.depth import depth_to_3d, depth_to_normals
 from kornia.geometry.camera import project_points
+from utils.compression_aware_utils import load_frame_trust_metrics, compute_bit_based_trust
 
 import pdb
 
@@ -97,6 +98,14 @@ class CFGaussianTrainer(GaussianTrainer):
                    reproj_loss=None,
                    **kwargs,
                    ):
+        
+        # scene_name = getattr(optim_opt, "scene_name", "None")
+        # qp_level = getattr(optim_opt, "qp_level", "None")
+        # trust_csv_path = f"/workdir/comp_log/{scene_name}_{qp_level}_trustmap.csv"
+        # #print('[DEBUG] trust_csv_path:', trust_csv_path)
+        #trust_csv_path = 
+
+
         # Render
         render_pkg = gs_render.render(
             viewpoint_cam,
@@ -131,7 +140,7 @@ class CFGaussianTrainer(GaussianTrainer):
 
         loss = loss_dict['loss']
         loss.backward()
-
+        #print("debug")
         with torch.no_grad():
             # Progress bar
             # try:
@@ -141,7 +150,9 @@ class CFGaussianTrainer(GaussianTrainer):
             # mask = visibility_filter.reshape(gt_image.shape[1:])[None]
             psnr_train = psnr(image, gt_image).mean().double()
             self.just_reset = False
+            
             if iteration < optim_opt.densify_until_iter and densify:
+                #print("debug2")
                 # Keep track of max radii in image-space for pruning
                 try:
                     gs_render.gaussians.max_radii2D[visibility_filter] = torch.max(gs_render.gaussians.max_radii2D[visibility_filter],
@@ -152,9 +163,41 @@ class CFGaussianTrainer(GaussianTrainer):
                     viewspace_point_tensor, visibility_filter)
 
                 if iteration > optim_opt.densify_from_iter and iteration % optim_opt.densification_interval == 0:
+                    #print("debug3")
+
                     size_threshold = 20 if iteration > optim_opt.opacity_reset_interval else None
-                    self.gs_render.gaussians.densify_and_prune(optim_opt.densify_grad_threshold, 0.005,
-                                                               gs_render.radius, size_threshold)
+                    if optim_opt.ours:
+                    
+                        print("🌟 Densify and prune with trust metrics 🌟")
+                        bit_trust_dict, avg_bit_trust = compute_bit_based_trust(
+                        qp_csv=f"/workdir/comp_log/{optim_opt.scene_name}_{optim_opt.qp_level}_trustmap.csv",
+                        max_value=0.5,
+                        debug=False
+                        )
+
+                        frame_trust_dict, avg_importance = load_frame_trust_metrics(
+                            qp_csv=f"/workdir/comp_log/{optim_opt.scene_name}_{optim_opt.qp_level}_trustmap.csv",
+                            debug=False
+                        )
+
+                        frame_id = int(viewpoint_cam.uid)
+
+                        bit_trust = bit_trust_dict.get(frame_id, 0.0)
+                        frame_trust = frame_trust_dict.get(frame_id, 1.0)
+
+                        baseline_init = avg_bit_trust + avg_importance
+                        #print('baseline_init: ', baseline_init)
+                        
+                        self.gs_render.gaussians.densify_and_prune_ours(optim_opt.densify_grad_threshold, 0.005, gs_render.radius, size_threshold,
+                                                    frame_trust=frame_trust,   # 🌟 추가됨
+                                                    bit_trust=bit_trust,       # 🌟 추가됨
+                                                    debug=False,                 # 🌟 디버깅용 (False면 조용히 동작)
+                                                    momentum=optim_opt.trust_momentum,   # 🌟 추가
+                                                    baseline_init=baseline_init)  # 🌟 추가
+                    else:
+                        print("original Densify and prune")
+                        self.gs_render.gaussians.densify_and_prune(optim_opt.densify_grad_threshold, 0.005,
+                                                                   gs_render.radius, size_threshold)
 
                 if iteration % optim_opt.opacity_reset_interval == 0 and reset and iteration < optim_opt.reset_until_iter:
                     gs_render.gaussians.reset_opacity()

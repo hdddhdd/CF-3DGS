@@ -126,6 +126,14 @@ class OptimizationParams(ParamGroup):
         self.densify_until_iter = 15_000
         self.reset_until_iter = 15_000
         self.densify_grad_threshold = 0.0002
+
+
+        self.scene_name = "grass"      # 🌟 추가
+        self.qp_level = "qp37"         # 🌟 추가
+        self.trust_momentum = 0.95      # 🌟 추가
+        self.ours = False               # 🌟 추가
+
+
         super().__init__(parser, "Optimization Parameters")
 
 
