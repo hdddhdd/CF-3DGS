@@ -22,7 +22,7 @@ do
         --qp_level "$QP_LEVEL"  \
         --trust_momentum 0.95  \
         --expname "${EXP_NAME}" \
-        --ours false
+        --ours True
         
     python run_cf3dgs.py --source ./data/compress-x/tnt/$dataset --mode eval_pose --data_type $TYPE --model_path "$MODEL_FILE"
     python run_cf3dgs.py --source ./data/compress-x/tnt/$dataset --mode eval_nvs  --data_type $TYPE --model_path "$MODEL_FILE"

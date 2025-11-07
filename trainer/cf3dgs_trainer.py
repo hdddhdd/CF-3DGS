@@ -168,7 +168,7 @@ class CFGaussianTrainer(GaussianTrainer):
                     size_threshold = 20 if iteration > optim_opt.opacity_reset_interval else None
                     if optim_opt.ours:
                     
-                        print("🌟 Densify and prune with trust metrics 🌟")
+                        #print("🌟 Densify and prune with trust metrics 🌟")
                         bit_trust_dict, avg_bit_trust = compute_bit_based_trust(
                         qp_csv=f"/workdir/comp_log/{optim_opt.scene_name}_{optim_opt.qp_level}_trustmap.csv",
                         max_value=0.5,
